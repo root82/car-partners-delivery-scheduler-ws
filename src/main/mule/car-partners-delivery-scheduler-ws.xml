@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/current/mule-ftp.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<flow name="car-partners-delivery-scheduler-wsFlow" doc:id="7e9e4bd9-eede-4306-929a-967aa93ffbd1" >
+		<scheduler doc:name="Scheduler" doc:id="d0223f4b-e425-4830-bb09-7420ee313b1f" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="10" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<os:retrieve doc:name="lastBookingId" doc:id="1101813b-997a-4014-8f55-2fa2c35b85be" key="lastBookingId" target="lastBookingId">
+			<os:default-value ><![CDATA[0]]></os:default-value>
+		</os:retrieve>
+		<db:select doc:name="selectCarBookingsWithPartnerName" doc:id="6d842cb5-fe64-4273-95e9-2e87db4af5cf" config-ref="car-partners_Config">
+			<db:sql><![CDATA[select b.*, pd.name partner_name 
+from bookings b, partnerdetails pd 
+where b.partnerid = pd.id and b.bookingid > :lastBookingId]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	lastBookingId: vars.lastBookingId
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="9f7a93ce-f1fd-4123-bc36-91f84885fdbb" >
+			<when expression="#[not isEmpty(payload)]">
+				<set-variable value="#[max(payload.bookingid)]" doc:name="maxBookingId" doc:id="e79055e6-ff2a-4802-b7f7-759891e1c035" variableName="maxBookingId"/>
+				<flow-ref doc:name="uploadCarBookingsFlow" doc:id="0b318c6c-1023-478b-bdd1-b64e8bad90f7" name="uploadCarBookingsFlow" />
+				<os:store doc:name="lastBookingId" doc:id="1a724596-3b87-48e4-bd65-625bbdb4d0f9" key="lastBookingId">
+					<os:value ><![CDATA[#[vars.maxBookingId]]]></os:value>
+				</os:store>
+				<logger level="INFO" doc:name="Logger" doc:id="34df0b88-6854-4ad4-975b-af8b977dd8c4" message='#["Files uploaded successfully at " ++ now()]' />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="No New Bookings" doc:id="5704c0f8-14ae-4a9c-af5a-0a491f7fe6aa" message="No New Bookings"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="uploadCarBookingsFlow" doc:id="fca40885-e2b7-4906-bfd8-94e79fcea8f8" >
+		<ee:transform doc:name="Transform Message" doc:id="b84fa031-b8f4-4d0b-bae0-f80613696cd0" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload groupBy $.partner_name]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+			</ee:variables>
+		</ee:transform>
+		<set-variable value="#[namesOf(payload)]" doc:name="partnerNames" doc:id="66082354-8a94-45ae-8e0f-68971e232206" variableName="partnerNames"/>
+		<foreach doc:name="For Each" doc:id="d6131056-195a-497c-8756-b5e1a89cb0bd" collection="#[payload]">
+			<ee:transform doc:name="Transform Message" doc:id="959e831d-87af-49b7-9236-9ba12559b6bf" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/csv lineSeparator="\r"
+---
+flatten(payload pluck $)]]></ee:set-payload>
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="fileName" ><![CDATA[%dw 2.0
+import * from dw::core::Strings
+output application/dw
+---
+dasherize(vars.partnerNames[vars.counter -1]) ++ "/" ++ now() as String { format: "yyyyMMdd'T'HHmmss" } ++ ".csv"]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="181f81b3-cc83-4f14-8e8f-cbe8b9a80ebb" message="#[vars.fileName]"/>
+			<logger level="INFO" doc:name="Logger" doc:id="157e80a9-2e18-445b-a696-b1f393ef2b4c" message="#[payload]" />
+			<ftp:write doc:name="Write" doc:id="1c5dab5e-825f-473d-a0fd-7e17bfdf3783" path="#[vars.fileName]" config-ref="ftp-upload-net_Config">
+		</ftp:write>
+		</foreach>
+	</flow>
+</mule>

@@ -1,0 +1,12 @@
+ftp:
+  workingDirectory: "/htdocs/cars_partners"
+  host: "ftpupload.net"
+  port: "21"
+  userName: "epiz_29826954"
+  password: "rsbURUzhHCI1x0"
+
+postgresql:
+  url: "jdbc:postgresql://chunee.db.elephantsql.com:5432/zpvolpei"
+  className: "org.postgresql.Driver"
+  userName: "zpvolpei"
+  password: "gOqimBkSL8dK4enOT70xNbU43_p1sAHv"
